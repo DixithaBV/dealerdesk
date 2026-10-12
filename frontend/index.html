@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DealerDesk Portal</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171c;--mut:#667085;--line:#e4e7ec;--acc:#2f5bea;--bad:#c0262d;--ok:#15803d}
+@media(prefers-color-scheme:dark){:root{--bg:#101318;--card:#181c23;--ink:#eef0f4;--mut:#9aa3b2;--line:#2a303b;--acc:#7c9bff;--bad:#ff8a8a;--ok:#5ad08a}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header b{margin-right:8px}nav button{border:0;background:none;color:var(--mut);padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.on{background:var(--acc);color:#fff}main{max-width:1000px;margin:14px auto;padding:0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+input,select,button.p{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+button.p{background:var(--acc);color:#fff;border:0;cursor:pointer}button.p:disabled{opacity:.5}button.s{background:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 8px;cursor:pointer}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.err{color:var(--bad)}.ok{color:var(--ok)}.mut{color:var(--mut)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.chat{max-height:50vh;overflow:auto}
+.m{padding:6px 10px;border-radius:10px;margin:4px 0;max-width:85%;white-space:pre-wrap}.u{background:var(--acc);color:#fff;margin-left:auto}.a{background:var(--bg);border:1px solid var(--line)}
+.pill{padding:1px 8px;border-radius:99px;border:1px solid var(--line);font-size:12px}
+</style></head><body>
+<header><b>DealerDesk</b><nav id="nav"></nav><span style="flex:1"></span>
+<label class="mut">Dealer <select id="dealer"></select></label></header>
+<main id="main"></main>
+<script>
+const $=s=>document.querySelector(s), api=async(p,o={})=>{const r=await fetch('/api'+p,{...o,headers:{'Content-Type':'application/json',...(o.headers||{})}});
+  const t=await r.text();let j=null;try{j=JSON.parse(t)}catch(e){}return {ok:r.ok,status:r.status,data:j}};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const errText=r=>r.data&&r.data.error?`${r.data.error.code}: ${r.data.error.message}`:`HTTP ${r.status}`;
+let tab='catalogue',dealer=null,cart={},sid='portal-'+Math.random().toString(36).slice(2,10),chat=[];
+const TABS={catalogue:'Catalogue',cart:'Cart',orders:'Orders',assistant:'Assistant',reorder:'Reorder'};
+function nav(){$('#nav').innerHTML=Object.entries(TABS).map(([k,v])=>`<button class="${k===tab?'on':''}" data-t="${k}">${v}${k==='cart'&&Object.keys(cart).length?` (${Object.keys(cart).length})`:''}</button>`).join('');
+  document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()})}
+async function render(){nav();$('#main').innerHTML='<div class="mut">Loading…</div>';await ({catalogue,cart:cartView,orders,assistant,reorder})[tab]()}
+// ---- catalogue
+let q={search:'',vehicle:'',page:1};
+async function catalogue(){const p=new URLSearchParams({page:q.page,page_size:15});if(q.search)p.set('search',q.search);if(q.vehicle)p.set('vehicle',q.vehicle);
+  const r=await api('/products/?'+p);if(!r.ok)return $('#main').innerHTML=`<div class="card err">${esc(errText(r))}</div>`;const d=r.data;
+  $('#main').innerHTML=`<div class="card"><div class="row"><input id="qs" placeholder="Search SKU, name, brand" value="${esc(q.search)}"><input id="qv" placeholder="Vehicle e.g. Pulsar 150" value="${esc(q.vehicle)}"><button class="p" id="go">Search</button><span class="mut">${d.count} parts</span></div>
+  <table><tr><th>SKU</th><th>Part</th><th>Fits</th><th class="n">Price ₹</th><th class="n">Stock</th><th></th></tr>${d.results.map(x=>`<tr><td>${esc(x.sku)}</td><td>${esc(x.name)}</td><td>${esc(x.vehicle_fitment)}</td><td class="n">${esc(x.price)}</td><td class="n ${x.stock?'':'err'}">${x.stock}</td><td><button class="s" data-add="${esc(x.sku)}">Add</button></td></tr>`).join('')}</table>
+  <div class="row" style="margin-top:8px"><button class="s" id="pv" ${d.previous?'':'disabled'}>Prev</button><button class="s" id="nx" ${d.next?'':'disabled'}>Next</button><span class="mut">page ${q.page}</span></div></div>`;
+  $('#go').onclick=()=>{q={search:$('#qs').value,vehicle:$('#qv').value,page:1};catalogue()};$('#pv').onclick=()=>{q.page--;catalogue()};$('#nx').onclick=()=>{q.page++;catalogue()};
+  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{cart[b.dataset.add]=(cart[b.dataset.add]||0)+1;nav()})}
+// ---- cart
+async function cartView(){const skus=Object.keys(cart);if(!skus.length)return $('#main').innerHTML='<div class="card mut">Cart is empty. Add parts from the catalogue.</div>';
+  $('#main').innerHTML=`<div class="card"><table><tr><th>SKU</th><th class="n">Qty</th><th></th></tr>${skus.map(s=>`<tr><td>${esc(s)}</td><td class="n"><input type="number" min="1" value="${cart[s]}" data-q="${esc(s)}" style="width:80px"></td><td><button class="s" data-rm="${esc(s)}">Remove</button></td></tr>`).join('')}</table>
+  <div class="row" style="margin-top:8px"><button class="p" id="mk" ${dealer?'':'disabled'}>Create draft order</button><span id="msg"></span></div></div>`;
+  document.querySelectorAll('[data-q]').forEach(i=>i.onchange=()=>{cart[i.dataset.q]=parseInt(i.value,10)||1});document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{delete cart[b.dataset.rm];render()});
+  $('#mk').onclick=async()=>{const r=await api('/orders/',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({dealer_id:dealer,items:skus.map(s=>({sku:s,quantity:cart[s]}))})});
+    if(r.ok){cart={};tab='orders';openOrder=r.data.order_number;render()}else $('#msg').innerHTML=`<span class="err">${esc(errText(r))}</span>`}}
+// ---- orders
+let openOrder=null;
+async function orders(){const r=await api('/orders/?page_size=50'+(dealer?'&dealer_id='+dealer:''));if(!r.ok)return $('#main').innerHTML=`<div class="card err">${esc(errText(r))}</div>`;
+  $('#main').innerHTML=`<div class="card"><table><tr><th>Order</th><th>Status</th><th class="n">Total ₹</th><th></th></tr>${r.data.results.map(o=>`<tr><td>${esc(o.order_number)}</td><td><span class="pill">${o.status}</span></td><td class="n">${o.grand_total}</td><td><button class="s" data-o="${o.order_number}">Open</button></td></tr>`).join('')||'<tr><td colspan=4 class="mut">No orders yet</td></tr>'}</table></div><div id="detail"></div>`;
+  document.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{openOrder=b.dataset.o;detail()});if(openOrder)detail()}
+const ACTIONS={DRAFT:['confirm','cancel'],CONFIRMED:['dispatch','cancel'],DISPATCHED:['deliver'],DELIVERED:[],CANCELLED:[]};
+async function detail(msg=''){const r=await api('/orders/'+openOrder+'/');if(!r.ok)return;const o=r.data;
+  $('#detail').innerHTML=`<div class="card"><div class="row"><b>${esc(o.order_number)}</b><span class="pill">${o.status}</span>${ACTIONS[o.status].map(a=>`<button class="s" data-a="${a}">${a}</button>`).join('')}<span class="err" id="am">${esc(msg)}</span></div>
+  <table><tr><th>SKU</th><th>Item</th><th class="n">Qty</th><th class="n">Unit ₹</th><th class="n">Subtotal</th><th class="n">GST 18%</th><th class="n">Total</th></tr>${o.items.map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="n">${i.quantity}</td><td class="n">${i.unit_price}</td><td class="n">${i.line_subtotal}</td><td class="n">${i.line_tax}</td><td class="n">${i.line_total}</td></tr>`).join('')}
+  <tr><td colspan=4></td><td class="n"><b>${o.subtotal}</b></td><td class="n"><b>${o.tax_total}</b></td><td class="n"><b>${o.grand_total}</b></td></tr></table></div>`;
+  document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{const x=await api('/orders/'+openOrder+'/'+b.dataset.a+'/',{method:'POST'});
+    if(x.ok)orders();else detail(x.data?.error?.code==='INSUFFICIENT_STOCK'?x.data.error.message:errText(x))})}
+// ---- assistant
+async function assistant(){$('#main').innerHTML=`<div class="card"><div class="chat" id="log"></div><div class="row" style="margin-top:8px"><input id="msg" style="flex:1" placeholder="Do you have brake pads for a Duke 390?"><button class="p" id="send">Send</button></div></div>`;
+  const log=()=>{$('#log').innerHTML=chat.map(m=>`<div class="m ${m.r}">${esc(m.t)}${m.meta?`<div class="mut" style="font-size:12px">${esc(m.meta)}</div>`:''}</div>`).join('')||'<div class="mut">Ask about parts, stock, prices, or ask me to draft an order.</div>';$('#log').scrollTop=1e9};log();
+  const send=async()=>{const t=$('#msg').value.trim();if(!t)return;$('#msg').value='';chat.push({r:'u',t});log();$('#send').disabled=true;
+    const r=await api('/assistant/chat/',{method:'POST',body:JSON.stringify({session_id:sid,dealer_id:dealer,message:t})});$('#send').disabled=false;
+    chat.push(r.ok?{r:'a',t:r.data.reply,meta:[r.data.tool_calls.length?'tools: '+r.data.tool_calls.map(c=>c.name).join(', '):'',...r.data.actions.map(a=>'draft '+a.order_number)].filter(Boolean).join(' · ')}:{r:'a',t:errText(r)});log()};
+  $('#send').onclick=send;$('#msg').onkeydown=e=>{if(e.key==='Enter')send()}}
+// ---- reorder
+async function reorder(){const r=await api('/reorder-suggestions/');if(!r.ok)return $('#main').innerHTML=`<div class="card err">${esc(errText(r))}</div>`;
+  const rows=r.data.results.slice().sort((a,b)=>b.reorder_qty-a.reorder_qty);
+  $('#main').innerHTML=`<div class="card"><table><tr><th>SKU</th><th class="n">Stock</th><th class="n">Lead wk</th><th class="n">Lead demand</th><th class="n">Safety</th><th class="n">Reorder pt</th><th class="n">Order qty</th></tr>${rows.map(x=>`<tr><td>${esc(x.sku)}</td><td class="n">${x.current_stock}</td><td class="n">${x.lead_time_weeks}</td><td class="n">${x.lead_time_demand.toFixed(1)}</td><td class="n">${x.safety_stock}</td><td class="n">${x.reorder_point.toFixed(1)}</td><td class="n ${x.reorder_qty?'err':'ok'}"><b>${x.reorder_qty}</b></td></tr>`).join('')}</table></div>`}
+(async()=>{const r=await api('/dealers/?page_size=100');const s=$('#dealer');if(r.ok){s.innerHTML=r.data.results.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');dealer=r.data.results[0]?.id??null;}
+  s.onchange=()=>{dealer=+s.value;if(tab==='orders')render()};render()})();
+</script></body></html>

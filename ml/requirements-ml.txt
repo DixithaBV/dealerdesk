@@ -1,0 +1,4 @@
+# Only needed to RE-GENERATE ml/forecast.csv (the Django app itself only reads the committed CSV)
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
