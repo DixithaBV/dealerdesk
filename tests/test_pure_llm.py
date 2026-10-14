@@ -93,6 +93,18 @@ class GeminiClientTests(unittest.TestCase):
         http = FakeHTTP(requests.Timeout("slow"), ok_text("fine"))
         self.assertEqual(gen(GeminiClient("K", session=http, sleep=lambda s: None))["text"], "fine")
 
+    def test_all_models_temporarily_down_then_second_sweep_succeeds(self):
+        http = FakeHTTP(*[Resp(503, {}) for _ in range(4)], ok_text("recovered"))
+        c = GeminiClient("K", session=http, sleep=lambda s: None)
+        self.assertEqual(gen(c)["text"], "recovered")
+        self.assertEqual(len(http.calls), 5)
+
+    def test_all_models_retired_is_not_retried(self):
+        http = FakeHTTP(*[Resp(404, {}) for _ in range(4)])
+        with self.assertRaises(LLMError):
+            gen(GeminiClient("K", session=http, sleep=lambda s: None))
+        self.assertEqual(len(http.calls), 4)  # no second sweep for a permanent error
+
     def test_function_response_part_shape(self):
         p = fn_response_part("check_stock", {"a": 1})
         self.assertEqual(p, {"functionResponse": {"name": "check_stock", "response": {"result": {"a": 1}}}})

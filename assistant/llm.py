@@ -11,7 +11,7 @@ DEFAULT_MODELS = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-f
 # "Thinking" makes tool-calling replies slow (30 s+ on some models). Ask for the lowest setting; if the model rejects
 # a field (any HTTP 400) the client steps to the next option and remembers it.
 THINKING_OPTIONS = [{"thinkingLevel": "minimal"}, {"thinkingLevel": "low"}, None]
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 20
 
 
 class LLMError(Exception):
@@ -28,6 +28,7 @@ class GeminiClient:
         self.sleep = sleep
         self.good_model = None  # remember the model that worked
         self.think_idx = 0      # index into THINKING_OPTIONS that the API accepted
+        self.saw_temporary = False
 
     def _body(self, system, contents, tool_declarations):
         gen = {"temperature": 0, "maxOutputTokens": 2048}
@@ -42,7 +43,18 @@ class GeminiClient:
         }
 
     def generate(self, system, contents, tool_declarations, deadline):
-        """-> {"text": str, "function_calls": [{"name","args"}], "content": <raw model content to echo back>}"""
+        """-> {"text", "function_calls", "content"}. Tries every candidate model; if ALL of them fail for a temporary
+        reason (429 / 5xx / timeout) it pauses 3 s and sweeps the whole list once more before giving up."""
+        try:
+            return self._sweep(system, contents, tool_declarations, deadline)
+        except LLMError:
+            if not self.saw_temporary or deadline - time.monotonic() < 12:
+                raise
+            self.sleep(3)
+            return self._sweep(system, contents, tool_declarations, deadline)
+
+    def _sweep(self, system, contents, tool_declarations, deadline):
+        self.saw_temporary = False
         last = "no attempt made"
         models = [self.good_model] + [m for m in self.models if m != self.good_model] if self.good_model else self.models
         for model in models:
@@ -57,8 +69,9 @@ class GeminiClient:
                                        headers={"x-goog-api-key": self.key, "Content-Type": "application/json"})
                 except requests.RequestException as e:
                     last = f"network error: {e}"
-                    attempt += 1
-                    self.sleep(min(1.0 * attempt, 3))
+                    self.saw_temporary = True
+                    attempt += 3 if isinstance(e, requests.Timeout) else 1  # a timeout = slow model: move to the next one
+                    self.sleep(0 if attempt >= 3 else 1.0 * attempt)
                     continue
                 if r.status_code == 200:
                     self.good_model = model
@@ -69,8 +82,10 @@ class GeminiClient:
                     continue
                 attempt += 1
                 if r.status_code in (500, 502, 503, 504):
+                    self.saw_temporary = True
                     break  # model overloaded / erroring: fail over to the next candidate straight away
                 if r.status_code == 429:
+                    self.saw_temporary = True
                     if attempt >= 2:
                         break  # still rate limited after one short pause: next candidate
                     self.sleep(2.0)
