@@ -3,7 +3,9 @@
 **Track: `aiml`.** Required parts: products / inventory / dealers, DRAFT orders, **Dealer Assistant (Part C)**, **Forecasting + reorder (Part D)**.
 Optional parts also built: full order engine (confirm / dispatch / deliver / cancel, GST, order numbers, idempotency), supplier sync (Part B), dealer-portal frontend (Part E, plain HTML/JS, no build step — open `http://localhost:8000/`).
 
-Video walkthrough (assistant tool-calling loop): **<paste your unlisted YouTube / Loom / Drive link here>**
+Video walkthrough (assistant tool-calling loop): [Watch the walkthrough](https://www.loom.com/share/5cb7712df8fd4c1ba136842b0c642ed7)
+
+Note: the per-turn time budget in assistant/engine.py is 50 seconds (line 15), under the contract's 60 seconds. Loom's auto-captions may mishear some words.
 
 ## LLM provider
 
